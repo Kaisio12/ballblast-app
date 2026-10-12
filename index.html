@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Ball Blast Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        body { margin: 0; padding: 0; background: #1a1a1a; color: white; font-family: Arial; overflow: hidden; touch-action: none; user-select: none; overscroll-behavior-y: contain; }
+        #game-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; }
+        canvas { background: #222; display: block; }
+        #ui { position: absolute; top: env(safe-area-inset-top, 20px); left: 20px; pointer-events: none; }
+        .stat { font-size: 20px; font-weight: bold; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        #money-display { color: #ffd700; } #diamond-display { color: #00e5ff; }
+        #upgrade-menu { position: absolute; bottom: env(safe-area-inset-bottom, 20px); display: flex; gap: 10px; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 15px; border: 2px solid #444; }
+        .upgrade-btn { background: #444; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 12px; text-align: center; min-width: 80px; }
+        #cheat-button { position: absolute; top: 0; right: 0; width: 20px; height: 20px; background: rgba(255,255,255,0.01); z-index: 100; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="cheat-button" onclick="activateCheat()"></div>
+        <div id="ui"><div id="money-display" class="stat">💰 Geld: 0</div><div id="diamond-display" class="stat">💎 Diamanten: 0</div></div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="upgrade-menu">
+            <button class="upgrade-btn" onclick="upgrade('damage')">💥 Schaden<br><span id="cost-damage">10</span>💰</button>
+            <button class="upgrade-btn" onclick="upgrade('speed')">⚡ Tempo<br><span id="cost-speed">15</span>💰</button>
+        </div>
+    </div>
+    <script>
+        if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js'); }); }
+        const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
+        const moneyEl = document.getElementById('money-display'); const diamondEl = document.getElementById('diamond-display');
+        let state = { money: 0, diamonds: 0, damage: 1, fireRate: 500, lastShot: 0, costs: { damage: 10, speed: 15 } };
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize); resize();
+        class Ball {
+            constructor() { this.radius = Math.random() * 20 + 20; this.x = Math.random() * (canvas.width - this.radius * 2) + this.radius; this.y = Math.random() * (canvas.height / 2); this.dx = (Math.random() - 0.5) * 4; this.dy = Math.random() * 2 + 2; this.hp = Math.floor(Math.random() * 10) + 5; this.maxHp = this.hp; this.color = 'hsl('+Math.random()*360+', 70%, 60%)'; }
+            update() { this.x += this.dx; this.y += this.dy; if (this.x + this.radius > canvas.width || this.x - this.radius < 0) this.dx *= -1; if (this.y + this.radius > canvas.height || this.y - this.radius < 0) this.dy *= -1; }
+            draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = this.color; ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.stroke(); ctx.closePath(); ctx.fillStyle = 'white'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.fillText(this.hp, this.x, this.y + 6); }
+        }
+        class Projectile {
+            constructor(x, y) { this.x = x; this.y = y; this.radius = 4; this.speed = 10; }
+            update() { this.y -= this.speed; }
+            draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.closePath(); }
+        }
+        let balls = [], projectiles = [], playerX = canvas.width / 2;
+        window.addEventListener('mousemove', (e) => { playerX = e.clientX; });
+        window.addEventListener('touchmove', (e) => { playerX = e.touches[0].clientX; e.preventDefault(); }, {passive: false});
+        function shoot() { const now = Date.now(); if (now - state.lastShot > state.fireRate) { projectiles.push(new Projectile(playerX, canvas.height - 50)); state.lastShot = now; } }
+        function upgrade(type) { if (state.money >= state.costs[type]) { state.money -= state.costs[type]; if (type === 'damage') state.damage++; if (type === 'speed') state.fireRate = Math.max(100, state.fireRate - 50); state.costs[type] = Math.floor(state.costs[type] * 1.5); updateUI(); } }
+        function activateCheat() { state.money += 1000000; state.diamonds += 1000; updateUI(); }
+        function updateUI() { moneyEl.innerText = '💰 Geld: ' + state.money; diamondEl.innerText = '💎 Diamanten: ' + state.diamonds; document.getElementById('cost-damage').innerText = state.costs.damage; document.getElementById('cost-speed').innerText = state.costs.speed; }
+        function spawnBall() { if (balls.length < 5) balls.push(new Ball()); }
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#00e5ff'; ctx.fillRect(playerX - 20, canvas.height - 40, 40, 20);
+            shoot();
+            projectiles.forEach((p, pi) => { p.update(); p.draw(); if (p.y < 0) projectiles.splice(pi, 1); });
+            balls.forEach((b, bi) => {
+                b.update(); b.draw();
+                projectiles.forEach((p, pi) => {
+                    if (Math.hypot(p.x - b.x, p.y - b.y) < b.radius + p.radius) {
+                        b.hp -= state.damage; projectiles.splice(pi, 1);
+                        if (b.hp <= 0) { state.money += b.maxHp * 2; balls.splice(bi, 1); updateUI(); }
+                    }
+                });
+            });
+            spawnBall(); requestAnimationFrame(gameLoop);
+        }
+        updateUI(); gameLoop();
+    </script>
+</body>
+</html>
